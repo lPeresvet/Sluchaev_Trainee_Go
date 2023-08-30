@@ -48,8 +48,14 @@ func (handler *UserHandler) GetById(ctx *fiber.Ctx) error {
 
 	user, err := handler.service.GetById(ctx.UserContext(), userRequest.Id)
 	if err != nil {
-		return ctx.Status(http.StatusNotFound).
-			JSON(fiber.Map{"message": "User with id <" + string(userRequest.Id) + "> not found"})
+		switch e := err.(type) {
+		case *errors.NotFoundErrorWithMessage:
+			return ctx.Status(http.StatusNotFound).
+				JSON(fiber.Map{"message": e.Error()})
+		default:
+			return ctx.Status(500).
+				JSON(fiber.Map{"message": "Unable to search user", "error": err.Error()})
+		}
 	}
 
 	return ctx.Status(http.StatusOK).

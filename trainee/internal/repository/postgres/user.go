@@ -134,7 +134,9 @@ func (ur *UserRepository) GetById(ctx context.Context, userId int64) (*core.User
 		return nil, err
 	}
 	if chUser == 0 {
-		return nil, nil
+		return nil, &errors.NotFoundErrorWithMessage{
+			Message: fmt.Sprintf("No user with id <%v> found", userId),
+		}
 	}
 	var segments []*core.Segment
 	rows, err := ur.conn.Query(ctx, GET_USER_SEGMENTS, userId)
