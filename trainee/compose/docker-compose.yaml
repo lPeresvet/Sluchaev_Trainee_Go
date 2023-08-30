@@ -1,0 +1,29 @@
+version: '3.3'
+
+services:
+  database:
+    image:
+      postgres
+    container_name: database_avito
+
+    ports:
+      - 5431:5432
+    environment:
+      - POSTGRES_USER=developer
+      - POSTGRES_PASSWORD=developer
+      - POSTGRES_DB=avito_db
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  application:
+    image:
+      trainee
+    container_name: app_1
+    ports:
+      - 8080:8080
+    depends_on:
+      database:
+        condition: service_healthy

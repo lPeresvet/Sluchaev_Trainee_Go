@@ -1,0 +1,6 @@
+http:
+  port:
+    8080
+postgres:
+  database:
+    url: postgres://developer:developer@database:5432/avito_db

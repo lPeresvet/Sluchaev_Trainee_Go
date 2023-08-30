@@ -1,0 +1,180 @@
+basePath: /
+definitions:
+  core.FailureMessage:
+    properties:
+      error:
+        type: string
+      message:
+        type: string
+    type: object
+  core.Segment:
+    properties:
+      slug:
+        type: string
+    type: object
+  core.SegmentResponse:
+    properties:
+      data:
+        $ref: '#/definitions/core.Segment'
+    type: object
+  core.User:
+    properties:
+      activeSegment:
+        items:
+          $ref: '#/definitions/core.Segment'
+        type: array
+      id:
+        type: integer
+    type: object
+  core.UserId:
+    properties:
+      id:
+        type: integer
+    type: object
+  core.UserRequest:
+    properties:
+      id:
+        type: integer
+      segmentsToAdd:
+        items:
+          $ref: '#/definitions/core.Segment'
+        type: array
+      segmentsToDelete:
+        items:
+          $ref: '#/definitions/core.Segment'
+        type: array
+    type: object
+  core.UserResponse:
+    properties:
+      data:
+        $ref: '#/definitions/core.User'
+    type: object
+host: localhost:8080
+info:
+  contact: {}
+  description: This is a avito task
+  termsOfService: http://swagger.io/terms/
+  title: Test task
+  version: "2.0"
+paths:
+  /segment:
+    delete:
+      consumes:
+      - application/json
+      description: Delete segment by slug
+      parameters:
+      - description: Segment JSON
+        in: body
+        name: segment
+        required: true
+        schema:
+          $ref: '#/definitions/core.Segment'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/core.SegmentResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/core.FailureMessage'
+        "405":
+          description: Method Not Allowed
+          schema:
+            $ref: '#/definitions/core.FailureMessage'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/core.FailureMessage'
+      summary: Delete segment
+    post:
+      consumes:
+      - application/json
+      description: Create new segment by slug
+      parameters:
+      - description: Segment JSON
+        in: body
+        name: segment
+        required: true
+        schema:
+          $ref: '#/definitions/core.Segment'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/core.SegmentResponse'
+        "405":
+          description: Method Not Allowed
+          schema:
+            $ref: '#/definitions/core.FailureMessage'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/core.FailureMessage'
+      summary: Add new segment
+  /users:
+    get:
+      consumes:
+      - application/json
+      description: Return user with it's active segments
+      parameters:
+      - description: User JSON
+        in: body
+        name: user
+        required: true
+        schema:
+          $ref: '#/definitions/core.UserId'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/core.UserResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/core.FailureMessage'
+        "405":
+          description: Method Not Allowed
+          schema:
+            $ref: '#/definitions/core.FailureMessage'
+      summary: Get user by id
+    post:
+      consumes:
+      - application/json
+      description: Add and delete user's active segment
+      parameters:
+      - description: User Request JSON
+        in: body
+        name: user
+        required: true
+        schema:
+          $ref: '#/definitions/core.UserRequest'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/core.UserResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/core.FailureMessage'
+        "405":
+          description: Method Not Allowed
+          schema:
+            $ref: '#/definitions/core.FailureMessage'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/core.FailureMessage'
+      summary: Edit active segments
+schemes:
+- http
+swagger: "2.0"
