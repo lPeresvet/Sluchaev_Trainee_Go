@@ -18,18 +18,32 @@ import (
 
 const (
 	CREATE_SEGMENTS_SCHEMA = `
-		CREATE TABLE IF NOT EXISTS segments (
-		id BIGSERIAL PRIMARY KEY,  
-		slug VARCHAR(100), 
-		status smallint default 0);
-		`
-	CREATE_USERS_SCHEMA = "CREATE TABLE IF NOT EXISTS accounts (" +
-		"id bigint primary key);"
-	CREATE_USER_SEGMENT_SCHEMA = "CREATE TABLE IF NOT EXISTS user_segment (" +
-		"user_id bigint, " +
-		"segment_id bigint, " +
-		"foreign key (user_id) references accounts(id), " +
-		"foreign key (segment_id) references segments(id));"
+	CREATE TABLE IF NOT EXISTS segments (
+	id BIGSERIAL PRIMARY KEY,  
+	slug VARCHAR(100), 
+	status SMALLINT DEFAULT 0);
+	`
+	CREATE_USERS_SCHEMA = `
+	CREATE TABLE IF NOT EXISTS accounts (
+	id BIGINT PRIMARY KEY);
+	`
+	CREATE_USER_SEGMENT_SCHEMA = `
+	CREATE TABLE IF NOT EXISTS user_segment (
+	user_id BIGINT, 
+	segment_id BIGINT, 
+	FOREIGN KEY (user_id) REFERENCES accounts(id), 
+	FOREIGN KEY (segment_id) REFERENCES segments(id));
+	`
+	CREATE_LOG_SCHEMA = `
+	CREATE TABLE IF NOT EXISTS segment_log (
+	id BIGSERIAL PRIMARY KEY, 
+	user_id BIGINT, 
+	segment_id BIGINT, 
+	operation SMALLINT, 
+	operation_time TIMESTAMP, 
+	FOREIGN KEY (user_id) REFERENCES accounts(id), 
+	FOREIGN KEY (segment_id) REFERENCES segments(id));
+	`
 	DB_URL = "postgres://developer:developer@database:5432/avito_db"
 )
 
@@ -48,18 +62,7 @@ func main() {
 
 	dbUrl := viper.GetString("postgres.database.url")
 
-	dbConfig, err := pgxpool.ParseConfig(dbUrl)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Unable to connect to database: %v\n", err)
-		os.Exit(1)
-	}
-	conn, err := pgxpool.NewWithConfig(context.Background(), dbConfig)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Unable to connect to database: %v\n", err)
-		os.Exit(1)
-	}
-
-	err = initDB(conn)
+	conn, err := initDB(dbUrl)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -70,13 +73,17 @@ func main() {
 
 	userRepository := postgres.NewUserRepository(conn)
 	segmentRepository := postgres.NewSegmentRepository(conn)
+	logrepository := postgres.NewLogRepository(conn)
 	userService := service.NewUserService(userRepository)
 	segmentService := service.NewSegmentService(segmentRepository)
+	logService := service.NewLogService(logrepository, userRepository)
 	userHandler := handler.NewUserHandler(userService)
 	segmentHandler := handler.NewSegmentHandler(segmentService)
+	logHandler := handler.NewLogHandler(logService)
 
 	userHandler.InitRoutes(app)
 	segmentHandler.InitRoutes(app)
+	logHandler.InitRoutes(app)
 
 	port := viper.GetString("http.port")
 
@@ -86,25 +93,42 @@ func main() {
 
 }
 
-func initDB(conn *pgxpool.Pool) error {
-	_, err := conn.Query(context.Background(), CREATE_SEGMENTS_SCHEMA)
+func initDB(dbUrl string) (*pgxpool.Pool, error) {
+	dbConfig, err := pgxpool.ParseConfig(dbUrl)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Unable to connect to database: %v\n", err)
+		return nil, err
+	}
+	conn, err := pgxpool.NewWithConfig(context.Background(), dbConfig)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Unable to connect to database: %v\n", err)
+		return nil, err
+	}
+
+	_, err = conn.Query(context.Background(), CREATE_SEGMENTS_SCHEMA)
 	if err != nil {
 		fmt.Println("Segments not created")
-		return err
+		return nil, err
 	}
 
 	_, err = conn.Query(context.Background(), CREATE_USERS_SCHEMA)
 	if err != nil {
 		fmt.Println("Users not created")
-		return err
+		return nil, err
 	}
 
 	_, err = conn.Query(context.Background(), CREATE_USER_SEGMENT_SCHEMA)
 	if err != nil {
 		fmt.Println("User_Segment not created")
-		return err
+		return nil, err
 	}
-	return nil
+
+	_, err = conn.Query(context.Background(), CREATE_LOG_SCHEMA)
+	if err != nil {
+		fmt.Println("Log_Schema not created")
+		return nil, err
+	}
+	return conn, nil
 }
 
 func SetupViper() error {

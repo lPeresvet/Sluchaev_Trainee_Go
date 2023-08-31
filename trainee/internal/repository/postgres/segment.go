@@ -4,6 +4,7 @@ import (
 	"context"
 	"trainee/internal/core"
 
+	"github.com/georgysavva/scany/v2/pgxscan"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -21,6 +22,14 @@ const (
 	SELECT count(id) 
 	FROM segments 
 	WHERE slug = $1 and status = 0;
+	`
+	GET_INFO_FOR_LOG = `
+	SELECT us.user_id, us.segment_id
+	FROM (SELECT id 
+		FROM segments
+		WHERE slug = $1) as "s"
+		INNER JOIN user_segment us 
+			ON us.segment_id = s.id;
 	`
 	ACTIVE  = 0
 	DELETED = 1
@@ -45,8 +54,38 @@ func (sr *SegmentRepository) Save(ctx context.Context, segment *core.Segment) (*
 }
 
 func (sr *SegmentRepository) Remove(ctx context.Context, segment *core.Segment) error {
-	_, err := sr.conn.Exec(ctx, DELETE_SEGMENT_BY_ID, segment.Slug)
+	var info []*core.UserSegmentId
+
+	rows, err := sr.conn.Query(ctx, GET_INFO_FOR_LOG, segment.Slug)
+
 	if err != nil {
+		return err
+	}
+
+	if err := pgxscan.ScanAll(&info, rows); err != nil {
+		return err
+	}
+
+	tx, err := sr.conn.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	_, err = tx.Exec(ctx, DELETE_SEGMENT_BY_ID, segment.Slug)
+	if err != nil {
+		tx.Rollback(ctx)
+		return err
+	}
+	for _, el := range info {
+		_, err = tx.Exec(ctx, INSERT_LOG, el.UserId, el.SegmentId, DELETED)
+		if err != nil {
+			tx.Rollback(ctx)
+			return err
+		}
+	}
+
+	err = tx.Commit(ctx)
+	if err != nil {
+		tx.Rollback(ctx)
 		return err
 	}
 	return nil

@@ -47,6 +47,10 @@ const (
 			ON us.segment_id = s.id 
 		WHERE s.status = 0;
 	`
+	INSERT_LOG = `
+	INSERT INTO segment_log (user_id, segment_id, operation, operation_time) 
+	VALUES ($1, $2, $3, now());
+	`
 )
 
 type UserRepository struct {
@@ -60,12 +64,12 @@ func NewUserRepository(connection *pgxpool.Pool) *UserRepository {
 }
 
 func (ur *UserRepository) Save(ctx context.Context, userId int64) (*core.User, error) {
-	chUser := int64(-1)
-	err := ur.conn.QueryRow(ctx, CHECK_USER, userId).Scan(&chUser)
-	if err != nil && err.Error() != "no rows in result set" {
-		fmt.Println("CHECK_USER")
+	chUser, err := ur.CountUser(ctx, userId)
+
+	if err != nil {
 		return nil, err
 	}
+
 	if chUser == 0 {
 		_, err = ur.conn.Exec(ctx, INSERT_USER, userId)
 		if err != nil {
@@ -83,6 +87,7 @@ func (ur *UserRepository) AddSegments(ctx context.Context, userId int64,
 	var segmentsCount int
 	for i := 0; i < len(segments); i++ {
 		err := ur.conn.QueryRow(ctx, GET_SEGMENT_ID, segments[i].Slug).Scan(&segmentId)
+
 		if err != nil {
 			if err.Error() == "no rows in result set" {
 				return nil, &errors.NotFoundErrorWithMessage{
@@ -91,13 +96,15 @@ func (ur *UserRepository) AddSegments(ctx context.Context, userId int64,
 			}
 			return nil, err
 		}
+
 		err = ur.conn.QueryRow(ctx, CHECK_USER_SEGMENTS, userId, segmentId).Scan(&segmentsCount)
+
 		if err != nil {
 			return nil, err
 		}
+
 		if segmentsCount == 0 {
-			_, err = ur.conn.Exec(ctx, INSERT_USER_SEGMENT, userId, segmentId)
-			if err != nil {
+			if err = ur.insertSegment(ctx, userId, segmentId); err != nil {
 				return nil, err
 			}
 		}
@@ -105,11 +112,38 @@ func (ur *UserRepository) AddSegments(ctx context.Context, userId int64,
 	return segments, nil
 }
 
+func (ur *UserRepository) insertSegment(ctx context.Context, userId int64, segmentId int64) error {
+	tx, err := ur.conn.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	_, err = tx.Exec(ctx, INSERT_USER_SEGMENT, userId, segmentId)
+	if err != nil {
+		tx.Rollback(ctx)
+		return err
+	}
+
+	_, err = tx.Exec(ctx, INSERT_LOG, userId, segmentId, ACTIVE)
+	if err != nil {
+		tx.Rollback(ctx)
+		return err
+	}
+
+	if err = tx.Commit(ctx); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (ur *UserRepository) DeleteSegments(ctx context.Context, userId int64,
 	segments []*core.Segment) error {
+
 	var segmentId int64
+
 	for i := 0; i < len(segments); i++ {
+
 		err := ur.conn.QueryRow(ctx, GET_SEGMENT_ID, segments[i].Slug).Scan(&segmentId)
+
 		if err != nil {
 			if err.Error() == "no rows in result set" {
 				return &errors.NotFoundErrorWithMessage{
@@ -118,28 +152,56 @@ func (ur *UserRepository) DeleteSegments(ctx context.Context, userId int64,
 			}
 			return err
 		}
-		_, err = ur.conn.Exec(ctx, DELETE_USER_SEGMENT, userId, segmentId)
-		if err != nil {
+
+		if err = ur.deleteSegment(ctx, userId, segmentId); err != nil {
 			return err
 		}
+
+	}
+	return nil
+}
+
+func (ur *UserRepository) deleteSegment(ctx context.Context, userId int64, segmentId int64) error {
+	tx, err := ur.conn.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	_, err = tx.Exec(ctx, DELETE_USER_SEGMENT, userId, segmentId)
+	if err != nil {
+		tx.Rollback(ctx)
+		return err
+	}
+
+	_, err = tx.Exec(ctx, INSERT_LOG, userId, segmentId, DELETED)
+	if err != nil {
+		tx.Rollback(ctx)
+		return err
+	}
+
+	if err = tx.Commit(ctx); err != nil {
+		tx.Rollback(ctx)
+		return err
 	}
 	return nil
 }
 
 func (ur *UserRepository) GetById(ctx context.Context, userId int64) (*core.User, error) {
-	chUser := int64(-1)
-	err := ur.conn.QueryRow(ctx, CHECK_USER, userId).Scan(&chUser)
-	if err != nil && err.Error() != "no rows in result set" {
-		fmt.Println("CHECK_USER")
+	chUser, err := ur.CountUser(ctx, userId)
+
+	if err != nil {
 		return nil, err
 	}
+
 	if chUser == 0 {
 		return nil, &errors.NotFoundErrorWithMessage{
 			Message: fmt.Sprintf("No user with id <%v> found", userId),
 		}
 	}
+
 	var segments []*core.Segment
+
 	rows, err := ur.conn.Query(ctx, GET_USER_SEGMENTS, userId)
+
 	if err != nil {
 		return nil, err
 	}
@@ -152,4 +214,16 @@ func (ur *UserRepository) GetById(ctx context.Context, userId int64) (*core.User
 		Id:       userId,
 		Segments: segments,
 	}, nil
+}
+
+func (ur *UserRepository) CountUser(ctx context.Context, userId int64) (int, error) {
+	chUser := 0
+
+	err := ur.conn.QueryRow(ctx, CHECK_USER, userId).Scan(&chUser)
+
+	if err != nil && err.Error() != "no rows in result set" {
+		return 0, err
+	}
+
+	return chUser, nil
 }

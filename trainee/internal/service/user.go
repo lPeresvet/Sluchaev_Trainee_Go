@@ -10,6 +10,7 @@ type UserRepository interface {
 	AddSegments(ctx context.Context, userId int64, segments []*core.Segment) ([]*core.Segment, error)
 	DeleteSegments(ctx context.Context, userId int64, segments []*core.Segment) (error)
 	GetById(ctx context.Context, userId int64) (*core.User, error)
+	CountUser(ctx context.Context, userId int64) (int, error)
 }
 
 type UserService struct {
